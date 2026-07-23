@@ -3,7 +3,7 @@
 //                                                        ▄▀▀▀▄  ▄  ▄▀▀▀▄  ▄  ▄▀▀▀▄  █  ▄▀▀▀▄
 //                                                        █   █  █  █   █  █  █   █  █  █   █
 //                                                         ▀▀▀   █   ▀▀▀   █   ▀▀▀   ▀   ▀▀▀
-//                                                               █      ▄▄▄█▄▄▄    █   █  
+//                                                               █      ▄▄▄█▄▄▄    █   █
 //                                                               ▀      █  █  █     █▄█
 //                                                             ▀▀▀▀▀    █  █  █      ▀
 //                                                                      ▀  ▀  ▀
@@ -13,12 +13,11 @@
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
 
-#define Base        0
-#define Nav         1
-#define Sym         2
-#define Fun         3
-#define Game        4
-#define Gameplus    5
+#define Base  0
+#define Nav   1
+#define Sym   2
+#define Fun   3
+#define Game  4
 
 &mt {
     quick-tap-ms = <100>;
@@ -34,19 +33,6 @@
 };
 
 / {
-    behaviors {
-        hm: homerow_mods {
-            compatible = "zmk,behavior-hold-tap";
-            label = "HOMEROW_MODS";
-            #binding-cells = <2>;
-            flavor = "tap-preferred";
-            tapping-term-ms = <200>;
-            quick-tap-ms = <125>;
-            global-quick-tap;
-            bindings = <&kp>, <&kp>;
-        };
-    };
-
     combos { compatible = "zmk,combos"; };
 
     keymap {
@@ -55,60 +41,50 @@
         Base {
             display-name = "Base";
             bindings = <
-              &kp Q       &kp W       &kp E          &kp R         &kp T        &kp Y    &kp U        &kp I        &kp O       &kp P
-              &hm LGUI A  &hm LALT S  &hm LCTRL D    &hm LSHIFT F  &kp G        &kp H    &hm RSHFT J  &hm RCTRL K  &hm RALT L  &hm RGUI SEMICOLON
-&lt 3 ESCAPE  &kp Z       &kp X       &kp C          &kp V         &kp B        &kp N    &kp M        &kp COMMA    &kp DOT     &kp SLASH           &kp APOSTROPHE
-                                      &mt LCTRL DEL  &lt 1 TAB     &kp SPACE    &kp RET  &lt 2 BSPC   &kp MINUS
+      &kp Q       &kp W       &kp F       &kp P       &kp B              &kp J       &kp L       &kp U       &kp Y       &kp APOSTROPHE
+      &kp A       &kp R       &kp S       &kp T       &kp G              &kp M       &kp N       &kp E       &kp I       &kp O
+&kp ESCAPE  &kp Z       &kp X       &kp C       &kp D       &kp V              &kp K       &kp H       &kp COMMA   &kp DOT     &kp SLASH   &kp MINUS
+                                    &mt LCTRL DELETE  &lt Nav TAB   &kp SPACE      &kp RETURN  &lt Sym BACKSPACE  &lt Fun BACKSLASH
             >;
         };
 
         Nav {
             display-name = "Nav";
             bindings = <
-              &kp TILDE       &trans     &kp UP_ARROW  &trans     &kp LBRC    &kp RBRC  &kp NUMBER_7  &kp NUMBER_8  &kp NUMBER_9  &kp NUMBER_0
-              &kp LEFT_SHIFT  &kp LEFT   &kp DOWN      &kp RIGHT  &kp LBKT    &kp RBKT  &kp NUMBER_4  &kp NUMBER_5  &kp NUMBER_6  &kp MINUS
-&kp LEFT_ALT  &kp LEFT_WIN    &kp MINUS  &trans        &kp PLUS   &kp LPAR    &kp RPAR  &kp NUMBER_1  &kp NUMBER_2  &kp NUMBER_3  &kp KP_MULTIPLY  &kp PLUS
-                                         &trans        &trans     &trans      &trans    &trans        &kp DOT
+      &trans      &trans      &trans      &trans      &trans             &trans      &kp HOME    &kp PAGE_DOWN  &kp PAGE_UP  &kp END
+      &kp LGUI    &kp LALT    &kp LCTRL   &kp LSHFT   &trans             &kp DELETE  &kp LEFT    &kp DOWN       &kp UP       &kp RIGHT
+&trans      &trans      &trans      &trans      &trans      &trans             &kp INSERT  &trans      &trans         &trans       &trans       &trans
+                                    &trans      &trans      &trans             &trans      &trans      &trans
             >;
         };
 
         Sym {
             display-name = "Sym";
             bindings = <
-                &kp EXCL  &kp AT  &kp HASH  &kp DOLLAR  &kp PERCENT    &kp CARET  &kp AMPERSAND  &kp KP_ASTERISK  &kp SQT  &kp DQT
-                &trans    &trans  &trans    &trans      &trans         &trans     &trans         &trans           &trans   &trans
-&studio_unlock  &trans    &trans  &trans    &trans      &trans         &kp UNDER  &kp EQUAL      &trans           &trans   &kp SLASH  &kp HOME
-                                  &trans    &trans      &trans         &trans     &trans         &trans
+      &kp NUMBER_1     &kp NUMBER_2  &kp NUMBER_3   &kp NUMBER_4   &kp NUMBER_5       &kp NUMBER_6  &kp NUMBER_7      &kp NUMBER_8  &kp NUMBER_9   &kp NUMBER_0
+      &kp EXCLAMATION  &kp AT        &kp HASH       &kp DOLLAR     &kp PERCENT        &kp CARET     &kp AMPERSAND     &kp ASTERISK  &kp LPAR       &kp RPAR
+&studio_unlock   &kp LPAR      &kp LBKT       &kp LBRC       &kp LESS_THAN  &kp GRAVE          &kp TILDE     &kp GREATER_THAN  &kp RBRC      &kp RBKT       &kp RPAR       &trans
+                                       &trans        &trans      &trans             &trans      &trans      &trans
             >;
         };
 
         Fun {
             display-name = "Fun";
             bindings = <
-        &bootloader  &trans  &trans  &trans  &to 4     &trans  &trans  &trans  &kp END  &kp F1
-        &trans       &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans   &kp F10
-&trans  &trans       &trans  &trans  &trans  &trans    &trans  &trans  &trans  &trans   &kp F20  &kp F7
-                             &trans  &trans  &trans    &trans  &trans  &trans
+      &kp F1      &kp F2      &kp F3      &kp F4      &kp F5             &kp F6      &kp F7      &kp F8      &kp F9      &kp F10
+      &trans      &trans      &trans      &trans      &trans             &trans      &trans      &trans      &kp F11     &kp F12
+&trans      &bootloader  &trans      &trans      &trans      &trans             &trans      &trans      &trans      &trans      &tog Game    &trans
+                                    &trans      &trans      &trans             &trans      &trans      &trans
             >;
         };
 
-        Gaming {
+        Game {
             display-name = "Game";
             bindings = <
-            &kp Z           &kp X  &kp C      &kp V         &sl 5     &trans  &trans  &trans  &trans  &trans
-            &kp TAB         &kp Q  &kp W      &kp E         &kp R     &trans  &trans  &trans  &trans  &trans
-&kp ESCAPE  &kp LEFT_SHIFT  &kp A  &kp S      &kp D         &kp F     &trans  &trans  &trans  &trans  &trans  &trans
-                                   &kp LCTRL  &kp LEFT_ALT  &trans    &trans  &trans  &trans
-            >;
-        };
-
-        Gaming+ {
-            display-name = "Game+";
-            bindings = <
-        &kp F10  &kp NUMBER_1  &kp NUMBER_2  &kp NUMBER_3  &kp T     &kp RA(RC(Y))  &kp RA(RC(U))  &trans  &trans  &kp LC(RA(DEL))
-        &kp L    &kp O         &kp Y         &kp K         &kp G     &kp F5         &kp F7         &trans  &trans  &kp F12
-&trans  &to 0    &trans        &trans        &trans        &trans    &trans         &trans         &trans  &trans  &kp F22          &kp LA(F4)
-                               &kp J         &kp I         &kp M     &trans         &trans         &trans
+      &kp T       &kp Q       &kp W       &kp E       &kp R              &kp Y       &kp U       &kp I       &kp O       &kp P
+      &kp G       &kp A       &kp S       &kp D       &kp F              &kp H       &kp J       &kp K       &kp L       &kp SEMICOLON
+&trans      &kp B       &kp Z       &kp X       &kp C       &kp V              &kp N       &kp M       &kp COMMA   &kp DOT     &kp SLASH   &trans
+                                    &kp LSHFT   &kp LCTRL   &kp SPACE          &kp RETURN  &kp BACKSPACE  &to Base
             >;
         };
     };
