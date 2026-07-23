@@ -7,6 +7,22 @@
 #include "totem.dtsi"
 
 /*
+ * The dongle never actually scans a matrix (it's the split central, not a
+ * peripheral), but the kscan0 node inherited from totem.dtsi still requires
+ * col-gpios per its devicetree binding. These pins are otherwise unused on
+ * the dongle, so this just satisfies that schema requirement.
+ */
+&kscan0 {
+    col-gpios
+        = <&xiao_d 8 GPIO_ACTIVE_HIGH>
+        , <&xiao_d 9 GPIO_ACTIVE_HIGH>
+        , <&xiao_d 10 GPIO_ACTIVE_HIGH>
+        , <&xiao_d 5 GPIO_ACTIVE_HIGH>
+        , <&xiao_d 4 GPIO_ACTIVE_HIGH>
+        ;
+};
+
+/*
  * Low-battery indicator LEDs for the two split halves. The dongle has no
  * key matrix of its own, so D0/D1 are free to drive plain GPIO LEDs.
  * Wire each LED's anode (through a current-limiting resistor) to the pin
