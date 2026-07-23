@@ -1,0 +1,8 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: MIT
+
+config TOTEM_BATTERY_LED
+    bool "Low-battery LEDs on the Totem dongle for each split half"
+    default y
+    depends on ZMK_SPLIT_ROLE_CENTRAL
+    depends on ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING

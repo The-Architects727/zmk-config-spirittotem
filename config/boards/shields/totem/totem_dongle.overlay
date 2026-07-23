@@ -1,0 +1,29 @@
+/*
+ * Copyright (c) 2022 The ZMK Contributors
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include "totem.dtsi"
+
+/*
+ * Low-battery indicator LEDs for the two split halves. The dongle has no
+ * key matrix of its own, so D0/D1 are free to drive plain GPIO LEDs.
+ * Wire each LED's anode (through a current-limiting resistor) to the pin
+ * and its cathode to GND. If wired the other way around, change
+ * GPIO_ACTIVE_HIGH to GPIO_ACTIVE_LOW below.
+ *
+ * These are driven by the custom battery_led listener in src/battery_led.c,
+ * which reacts to zmk_peripheral_battery_state_changed events.
+ */
+/ {
+    leds {
+        compatible = "gpio-leds";
+        left_battery_led: led_left_batt {
+            gpios = <&xiao_d 0 GPIO_ACTIVE_HIGH>;
+        };
+        right_battery_led: led_right_batt {
+            gpios = <&xiao_d 1 GPIO_ACTIVE_HIGH>;
+        };
+    };
+};
