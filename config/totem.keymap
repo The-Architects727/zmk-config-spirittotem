@@ -44,15 +44,15 @@
       &kp Q       &kp W       &kp F       &kp P       &kp B              &kp J       &kp L       &kp U       &kp Y       &kp APOSTROPHE
       &kp A       &kp R       &kp S       &kp T       &kp G              &kp M       &kp N       &kp E       &kp I       &kp O
 &kp ESCAPE  &kp Z       &kp X       &kp C       &kp D       &kp V              &kp K       &kp H       &kp COMMA   &kp DOT     &kp SLASH   &kp MINUS
-                                    &mt LCTRL DELETE  &lt Nav TAB   &kp SPACE      &kp RETURN  &lt Sym BACKSPACE  &lt Fun BACKSLASH
+                                    &mt LCTRL DELETE  &lt Nav TAB   &kp SPACE      &mt RSHFT RETURN  &lt Sym BACKSPACE  &lt Fun BACKSLASH
             >;
         };
 
         Nav {
             display-name = "Nav";
             bindings = <
-      &trans      &trans      &trans      &trans      &trans             &trans      &kp HOME    &kp PAGE_DOWN  &kp PAGE_UP  &kp END
-      &kp LGUI    &kp LALT    &kp LCTRL   &kp LSHFT   &trans             &kp DELETE  &kp LEFT    &kp DOWN       &kp UP       &kp RIGHT
+      &trans      &trans      &trans      &trans      &trans             &trans      &kp HOME    &kp UP         &kp PAGE_UP  &kp END
+      &kp LGUI    &kp LALT    &kp LCTRL   &trans      &trans             &kp DELETE  &kp LEFT    &kp DOWN       &kp RIGHT    &kp PAGE_DOWN
 &trans      &trans      &trans      &trans      &trans      &trans             &kp INSERT  &trans      &trans         &trans       &trans       &trans
                                     &trans      &trans      &trans             &trans      &trans      &trans
             >;
