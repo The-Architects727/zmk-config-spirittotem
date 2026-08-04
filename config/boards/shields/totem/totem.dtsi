@@ -80,14 +80,23 @@
     kscan0: kscan_0 {
         compatible = "zmk,kscan-gpio-matrix";
         label = "KSCAN";
-        
-        diode-direction = "col2row"; 
+
+        diode-direction = "col2row";
+        wakeup-source;
         row-gpios
             = <&xiao_d 0 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
             , <&xiao_d 1 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
             , <&xiao_d 2 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
             , <&xiao_d 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
             ;
+    };
+
+    /* Lets a keypress on the matrix wake this half from soft-off (see the
+     * sleep combo in totem.keymap). Left/right only in practice - the
+     * dongle never enables CONFIG_ZMK_PM_SOFT_OFF, so this is inert there. */
+    soft_off_wakers {
+        compatible = "zmk,soft-off-wakeup-sources";
+        wakeup-sources = <&kscan0>;
     };
 
     /*

@@ -33,7 +33,19 @@
 };
 
 / {
-    combos { compatible = "zmk,combos"; };
+    combos {
+        compatible = "zmk,combos";
+
+        /* Left outer-pinky Esc + right outer-pinky Minus + right thumb's
+         * Fun key, held together. Puts that half to sleep (see
+         * CONFIG_ZMK_PM_SOFT_OFF in totem_left.conf/totem_right.conf); press
+         * any key on a half to wake it back up. */
+        combo_sleep {
+            timeout-ms = <50>;
+            key-positions = <20 31 37>;
+            bindings = <&soft_off>;
+        };
+    };
 
     keymap {
         compatible = "zmk,keymap";

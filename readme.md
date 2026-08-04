@@ -26,11 +26,30 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   GPIOs on the dongle's D0/D1 pins (see
   [`totem_dongle.overlay`](config/boards/shields/totem/totem_dongle.overlay)),
   driven by a small custom listener in
-  [`src/battery_led.c`](src/battery_led.c).
+  [`src/battery_led.c`](src/battery_led.c). Each LED has three states: **off**
+  (that half hasn't reported in ~90s — asleep or disconnected), **dim** (a
+  low-duty-cycle software pulse — connected, battery fine), or **bright**
+  (connected, battery low). ZMK doesn't expose a clean central-side "is
+  peripheral N connected" event, so "connected" here is inferred from battery
+  report freshness (reports arrive every 30s; 3 missed reports = assume
+  asleep). That means up to ~90s of lag noticing a disconnect and ~30s
+  noticing a reconnect — fine for "is it on for the night", not meant for
+  real-time status.
 - **On-demand battery check.** Hold the Fun layer, tap the far outer-left
   pinky key to blink out each half's charge in 10% steps (left LED, pause,
   right LED) — see [`src/battery_led.c`](src/battery_led.c) for the behavior
   driver and blink sequencer.
+- **Manual sleep combo.** Hold Esc (left outer-pinky) + Minus (right
+  outer-pinky) + the Fun key (right outer-thumb) together to put that half
+  to sleep via ZMK's built-in `&soft_off` — see the `combo_sleep` combo in
+  [`config/totem.keymap`](config/totem.keymap). Any keypress on a half wakes
+  it back up (via `wakeup-source` on `kscan0` and a
+  `zmk,soft-off-wakeup-sources` node, both in
+  [`totem.dtsi`](config/boards/shields/totem/totem.dtsi)) — each half sleeps
+  and wakes independently, there's no way for a sleeping battery-powered
+  peripheral to be woken remotely. This is separate from and doesn't require
+  `CONFIG_ZMK_SLEEP` (automatic idle-timeout sleep, which stays off) — it
+  only happens when you deliberately trigger the combo.
 
 ## How the battery data actually gets to the dongle
 
