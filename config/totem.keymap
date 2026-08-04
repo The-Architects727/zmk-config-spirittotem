@@ -36,13 +36,16 @@
     combos {
         compatible = "zmk,combos";
 
-        /* Left outer-pinky Esc + right outer-pinky Minus + right thumb's
-         * Fun key, held together. Puts that half to sleep (see
+        /* Esc + Z (both left hand, different fingers) + right outer-pinky
+         * Minus, held together. Puts that half to sleep (see
          * CONFIG_ZMK_PM_SOFT_OFF in totem_left.conf/totem_right.conf); press
-         * any key on a half to wake it back up. */
+         * any key on a half to wake it back up. Deliberately avoids every
+         * thumb key - they're all mod-taps or layer-taps (see &lt Fun on
+         * position 37), and a combo member that's also a layer-tap changes
+         * what other positions mean mid-combo, which breaks detection. */
         combo_sleep {
-            timeout-ms = <50>;
-            key-positions = <20 31 37>;
+            timeout-ms = <100>;
+            key-positions = <20 21 31>;
             bindings = <&soft_off>;
         };
     };

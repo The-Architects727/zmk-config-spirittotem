@@ -39,11 +39,15 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   pinky key to blink out each half's charge in 10% steps (left LED, pause,
   right LED) — see [`src/battery_led.c`](src/battery_led.c) for the behavior
   driver and blink sequencer.
-- **Manual sleep combo.** Hold Esc (left outer-pinky) + Minus (right
-  outer-pinky) + the Fun key (right outer-thumb) together to put that half
-  to sleep via ZMK's built-in `&soft_off` — see the `combo_sleep` combo in
-  [`config/totem.keymap`](config/totem.keymap). Any keypress on a half wakes
-  it back up (via `wakeup-source` on `kscan0` and a
+- **Manual sleep combo.** Hold Esc (left outer-pinky) + Z (left ring finger)
+  + Minus (right outer-pinky) together to put that half to sleep via ZMK's
+  built-in `&soft_off` — see the `combo_sleep` combo in
+  [`config/totem.keymap`](config/totem.keymap). Deliberately uses no thumb
+  keys: every thumb key is a mod-tap or layer-tap, and a combo member that's
+  also a layer-tap changes what other positions mean mid-combo (e.g. the Fun
+  key activating the Fun layer, turning position 20 from Escape into
+  `&battery_check`), which breaks combo detection entirely. Any keypress on
+  a half wakes it back up (via `wakeup-source` on `kscan0` and a
   `zmk,soft-off-wakeup-sources` node, both in
   [`totem.dtsi`](config/boards/shields/totem/totem.dtsi)) — each half sleeps
   and wakes independently, there's no way for a sleeping battery-powered
