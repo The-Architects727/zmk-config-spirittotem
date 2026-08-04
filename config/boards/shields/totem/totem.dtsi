@@ -89,4 +89,17 @@
             , <&xiao_d 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
             ;
     };
+
+    /*
+     * Declared here (shared by all three shields) purely so the &battery_check
+     * label in the shared keymap resolves on every build. It only actually
+     * does anything on the dongle: that's the only build where
+     * CONFIG_TOTEM_BATTERY_LED is on and src/battery_led.c (which implements
+     * the driver behind this node, with locality = BEHAVIOR_LOCALITY_CENTRAL)
+     * gets compiled at all.
+     */
+    battery_check: behavior_battery_check {
+        compatible = "zmk,behavior-battery-check";
+        #binding-cells = <0>;
+    };
  };

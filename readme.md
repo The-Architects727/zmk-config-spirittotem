@@ -27,6 +27,10 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   [`totem_dongle.overlay`](config/boards/shields/totem/totem_dongle.overlay)),
   driven by a small custom listener in
   [`src/battery_led.c`](src/battery_led.c).
+- **On-demand battery check.** Hold the Fun layer, tap the far outer-left
+  pinky key to blink out each half's charge in 10% steps (left LED, pause,
+  right LED) — see [`src/battery_led.c`](src/battery_led.c) for the behavior
+  driver and blink sequencer.
 
 ## How the battery data actually gets to the dongle
 
@@ -48,7 +52,10 @@ turns on the corresponding LED when the reported state-of-charge drops below
 ~3.7V (it maps millivolts to percent via `mv * 2 / 15 - 459`, and ZMK never
 transmits raw millivolts over the split link, only this percentage). So
 "charged" here really does mean "the half reported >=~3.7V", just expressed
-in the units ZMK actually sends.
+in the units ZMK actually sends. This intentionally keeps the peripherals on
+ZMK's stock, well-tested battery driver rather than a custom one — all the
+LED/blink logic lives on the dongle, where it's easy to change without
+touching left/right firmware at all.
 
 ## Wiring and setup notes
 

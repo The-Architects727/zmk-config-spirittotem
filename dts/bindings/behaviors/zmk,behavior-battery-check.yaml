@@ -1,0 +1,5 @@
+description: Blink the dongle's battery LEDs to report each split half's charge in 10% steps
+
+compatible: "zmk,behavior-battery-check"
+
+include: zero_param.yaml
