@@ -26,19 +26,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 static const struct gpio_dt_spec onboard_led = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 
 /*
- * ZMK's own kscan matrix driver (app/module/drivers/kscan/kscan_gpio_matrix.c)
- * does its debounce/re-scan polling via a k_work_delayable submitted with
- * plain k_work_reschedule() - which, like plain k_work_submit()/
- * k_work_schedule() below, targets the shared default system workqueue.
- * flash_and_sleep's k_msleep() calls used to run on that same workqueue via
- * K_WORK_DEFINE/K_WORK_DELAYABLE_DEFINE, blocking it for hundreds of
- * milliseconds at a time - starving kscan's own "poll quickly while a key
- * is still settling" loop at the worst possible moment (while the gesture
- * keys were still being read) and very likely the real cause of both the
- * spurious repeated characters and the failure to wake afterwards, neither
- * of which had anything to do with how long the keys were actually held.
- * A dedicated queue, with its own thread, means blocking here can never
- * again compete with kscan (or anything else) for the system workqueue.
+ * A dedicated workqueue for do_flash()'s blocking k_msleep() calls below,
+ * kept separate from the default system workqueue because ZMK's own kscan
+ * matrix driver (app/module/drivers/kscan/kscan_gpio_matrix.c) does its
+ * debounce/re-scan polling there too. Blocking that shared queue for
+ * hundreds of milliseconds starves kscan's own scan processing - for every
+ * key, not just the ones involved here - for as long as the block lasts.
  */
 static struct k_work_q sleep_work_q;
 K_THREAD_STACK_DEFINE(sleep_work_q_stack, 2048);
@@ -55,27 +48,13 @@ static void do_flash(int flashes, int on_ms, int off_ms) {
 /*
  * zmk_pm_soft_off() (app/src/pm.c) re-arms the kscan matrix as a wakeup
  * source right before powering off. If the physical keys that triggered
- * sleep are still being held at that exact moment, that's a level already
- * active when the wake-detect gets armed - a known nRF52 GPIO SENSE/LATCH
- * hazard that can leave the wake mechanism stuck until a true
- * power-on-reset (matching "only the reset button, or draining the battery
- * for a minute, brings it back").
- *
- * A first version tried to fix this by waiting (with a timeout) for release
- * *after* detecting the press instead of before flashing at all. In testing
- * that produced a burst of repeated characters starting only after the
- * flash finished and lasting close to the full timeout, regardless of how
- * briefly the keys were actually tapped - the giveaway that the timeout was
- * being hit every time, not because of a long hold, but because the wait
- * loop (like the flash before it) was itself running on the shared system
- * workqueue and monopolizing it, so kscan's own debounce/re-scan work
- * (queued on that same workqueue - see sleep_work_q above) couldn't run and
- * report the actual release no matter how quickly it happened, until the
- * timeout finally gave up waiting and this returned. Between the dedicated
- * queue above (so this can never again block kscan) and triggering only
- * after sleep_gesture_listener below has already observed the full
- * press-then-release itself, there's nothing left to wait for here at all:
- * by the time this handler runs, the keys are already confirmed up.
+ * sleep are still held at that exact moment, that's a level already active
+ * when the wake-detect gets armed - a known nRF52 GPIO SENSE/LATCH hazard
+ * that can leave the wake mechanism stuck until a true power-on-reset. This
+ * is why sleep_gesture_listener below only submits this work after
+ * observing a full press-then-release, never on press: by the time this
+ * handler runs, the keys are already confirmed up, so there's nothing to
+ * wait for or time out on here.
  */
 static atomic_t sleep_in_progress = ATOMIC_INIT(0);
 
@@ -96,30 +75,23 @@ static K_WORK_DEFINE(sleep_work, sleep_work_handler);
  * Manual sleep gesture: press Esc+Z (left) or Slash+Minus (right) together,
  * then let go - whichever pair actually exists on this half's own kscan
  * matrix; the other pair's positions simply never fire here, so this same
- * code works unmodified on both builds.
+ * code works unmodified on both builds. Each half decides for itself and
+ * sleeps independently - there's no dependency on the central at all.
  *
- * This used to be a ZMK combo (evaluated centrally, with the trigger relayed
- * back down to the peripheral over BLE via a custom GLOBAL-locality
- * behavior). That turned out to be unreliable in practice: it took fixing
- * two real bugs (a truncated split-transport behavior name, then a
- * blocking call inside the Bluetooth GATT write callback that receives the
- * relayed command) and it *still* didn't fire reliably, most likely a
- * dropped/delayed BLE packet somewhere in the central-to-peripheral relay
- * itself with no way to know for sure without a debug probe. Listening
- * locally sidesteps all of that: physical_layouts.c already raises
- * zmk_position_state_changed on this device for its own keys before
- * anything is sent to the central at all, so there's no relay, no GATT
- * callback, nothing that can drop a packet - each half decides for itself.
+ * Deliberately not a ZMK combo: that would mean evaluating it centrally and
+ * relaying the trigger back down to this peripheral over BLE, which proved
+ * unreliable in practice on this hardware (see readme.md's implementation
+ * notes for the history). Listening directly to zmk_position_state_changed
+ * - which physical_layouts.c already raises locally for this device's own
+ * keys, before anything is sent to the central - sidesteps that relay
+ * entirely.
  *
  * Triggers on release, not press: `armed` latches true the moment both
- * positions of a pair are simultaneously down, and the actual sleep_work
- * only gets submitted once both have gone back up. This means (a) by the
- * time sleep_work_handler runs, the keys are already confirmed released -
- * no race, no timeout, nothing left to wait for before calling
- * zmk_pm_soft_off() - and (b) whatever the keys' normal Escape/Z or
- * Slash/Minus output was during the brief press is over by the time
- * anything else happens, instead of continuing to repeat for as long as a
- * flash-then-sleep sequence takes to run.
+ * positions of a pair are simultaneously down, and sleep_work only gets
+ * submitted once both have gone back up. That's what makes the wakeup-
+ * source-hazard guard above trivially satisfied, and also means the keys'
+ * normal Escape/Z or Slash/Minus output is a single brief press rather than
+ * held for as long as the flash-then-sleep sequence takes to run.
  */
 #define SLEEP_GESTURE_POS_LEFT_1 20  /* Escape */
 #define SLEEP_GESTURE_POS_LEFT_2 21  /* Z */

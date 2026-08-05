@@ -1,8 +1,8 @@
 /*
-* Copyright (c) 2022 The ZMK Contributors
-*
-* SPDX-License-Identifier: MIT
-*/
+ * Copyright (c) 2022 The ZMK Contributors
+ *
+ * SPDX-License-Identifier: MIT
+ */
 
 #include <dt-bindings/zmk/matrix_transform.h>
 #include <physical_layouts.dtsi>
@@ -28,7 +28,7 @@
                                 RC(3,2) RC(3,3) RC(3,4)    RC(3,5) RC(3,6) RC(3,7)         
         >;
     };
- 
+
     default_layout: default_layout {
         compatible = "zmk,physical-layout";
         display-name = "TOTEM";
@@ -76,7 +76,7 @@
             , <&key_physical_attrs 105 100 1003  371       0    0    0>
             ;
     };
- 
+
     kscan0: kscan_0 {
         compatible = "zmk,kscan-gpio-matrix";
         label = "KSCAN";
@@ -92,8 +92,9 @@
     };
 
     /* Lets a keypress on the matrix wake this half from soft-off (see the
-     * sleep combo in totem.keymap). Left/right only in practice - the
-     * dongle never enables CONFIG_ZMK_PM_SOFT_OFF, so this is inert there. */
+     * manual sleep gesture and auto-sleep in src/totem_sleep.c). Left/right
+     * only in practice - the dongle never enables CONFIG_ZMK_PM_SOFT_OFF,
+     * so this is inert there. */
     soft_off_wakers {
         compatible = "zmk,soft-off-wakeup-sources";
         wakeup-sources = <&kscan0>;
@@ -111,4 +112,4 @@
         compatible = "zmk,behavior-battery-check";
         #binding-cells = <0>;
     };
- };
+};

@@ -33,10 +33,10 @@
 };
 
 / {
-    /* The manual sleep gesture (hold Esc+Z or Slash+Minus) is no longer a
-     * ZMK combo - see src/totem_sleep.c for why and how it works now. It
-     * doesn't need anything here: Escape/Z/Slash/Minus keep their normal
-     * &kp bindings below, and src/totem_sleep.c watches those same
+    /* The manual sleep gesture (press Esc+Z or Slash+Minus together, then
+     * let go) is not a ZMK combo - see src/totem_sleep.c for why and how it
+     * works. It doesn't need anything here: Escape/Z/Slash/Minus keep their
+     * normal &kp bindings below, and src/totem_sleep.c watches those same
      * positions locally on each half. */
     keymap {
         compatible = "zmk,keymap";

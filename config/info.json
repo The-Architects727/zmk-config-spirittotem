@@ -1,7 +1,7 @@
 {
   "id": "totem",
   "name": "totem",
-  "url": "",
+  "url": "https://github.com/The-Architects727/zmk-config-spirittotem",
   "layouts": {
     "LAYOUT": {
       "layout": [
