@@ -104,8 +104,18 @@
      * &totem_sleep label in the shared keymap resolves on every build - same
      * reasoning as &battery_check above. Only actually does anything on
      * left/right: see CONFIG_TOTEM_SLEEP_WARN and src/totem_sleep.c.
+     *
+     * Node name (not the &totem_sleep label - that's unaffected) must stay
+     * under 15 chars: this behavior is GLOBAL locality, so the combo's
+     * press/release gets relayed central-to-peripheral over BLE using the
+     * device name as a lookup key in a fixed char[16] buffer
+     * (zmk_split_transport_central_command.data.invoke_behavior.behavior_dev,
+     * see app/include/zmk/split/transport/types.h). A longer name gets
+     * silently truncated in transit and never matches on the peripheral -
+     * this is why stock &soft_off's own node is named the cryptic "z_so_off"
+     * rather than something descriptive.
      */
-    totem_sleep: behavior_totem_sleep {
+    totem_sleep: tot_sleep {
         compatible = "zmk,behavior-totem-sleep";
         #binding-cells = <0>;
     };

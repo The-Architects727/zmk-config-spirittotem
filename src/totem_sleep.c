@@ -28,8 +28,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 static const struct gpio_dt_spec onboard_led = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 
 #define SLEEP_WARN_FLASHES 3
-#define SLEEP_WARN_ON_MS 150
-#define SLEEP_WARN_OFF_MS 150
+#define SLEEP_WARN_ON_MS 300
+#define SLEEP_WARN_OFF_MS 200
 
 static void flash_and_sleep(void) {
     for (int i = 0; i < SLEEP_WARN_FLASHES; i++) {

@@ -65,6 +65,26 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   peripheral to be woken remotely. This is separate from and doesn't require
   `CONFIG_ZMK_SLEEP` (automatic idle-timeout sleep, which stays off) — it
   only happens when you deliberately trigger the combo.
+  - **Gotcha that bit the first version of this:** the devicetree node behind
+    `&totem_sleep` has to have a *short* node name (currently `tot_sleep`,
+    under 15 characters) — not the `totem_sleep:` label used for phandle
+    references, the actual node name after it. `BEHAVIOR_LOCALITY_GLOBAL`
+    behaviors get relayed central-to-peripheral over BLE by looking up the
+    target behavior's device name in a fixed `char[16]` buffer
+    (`zmk_split_transport_central_command.data.invoke_behavior.behavior_dev`,
+    see `app/include/zmk/split/transport/types.h` in the ZMK source, and the
+    truncation-detecting `LOG_ERR` right where it gets packed, in
+    `app/src/split/central.c`). A longer name gets silently truncated in
+    transit and matches nothing on the peripheral, so the combo still
+    resolves and its press/release get sent, but the peripheral can't find
+    the behavior and does nothing at all — no flash, no sleep, no error
+    visible without a serial log. This is exactly why stock `&soft_off`'s
+    own node is named the cryptic `z_so_off` rather than something
+    descriptive — ZMK's own authors hit the same limit. `&battery_check`
+    happens to dodge this because it's `BEHAVIOR_LOCALITY_CENTRAL`, which
+    never goes through the split relay at all — only `GLOBAL`/`EVENT_SOURCE`
+    behaviors that cross the peripheral boundary need to respect the 15-char
+    limit.
 - **Auto-sleep when the dongle disappears.** The other half of
   [`src/totem_sleep.c`](src/totem_sleep.c) (gated by `CONFIG_TOTEM_SLEEP_WARN`,
   which depends on `!ZMK_SPLIT_ROLE_CENTRAL` - left/right only) subscribes to
