@@ -58,15 +58,27 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   half's own kscan matrix; the other pair's positions simply never fire on
   that build), which flashes the XIAO nRF52840's built-in green LED (`led1` -
   separate hardware from the dongle's D0/D1 battery LEDs, already present on
-  the board, no wiring needed) 3 times before calling `zmk_pm_soft_off()`, so
-  there's a visible confirmation it's about to sleep rather than it just
-  going dark. Any keypress on a half wakes it back up (via `wakeup-source` on
+  the board, no wiring needed) 3 quick times as soon as both keys are down,
+  then **waits for you to actually release them** before calling
+  `zmk_pm_soft_off()`. That wait isn't cosmetic: `zmk_pm_soft_off()`
+  (`app/src/pm.c` in the ZMK source) re-arms the kscan matrix as a wakeup
+  source right before powering off, and if the trigger keys are still held
+  at that exact moment, that's a wake-detect line already active when the
+  wakeup gets armed - a known nRF52 GPIO SENSE/LATCH hazard that can leave
+  the wake mechanism stuck until a true power-on-reset. Waiting for release
+  first (capped at 3s so a stuck switch can't hang it forever) guarantees
+  the keys are idle when the wakeup source gets armed, and as a side effect
+  keeps the keys from being held long enough to trigger OS key-repeat. Any
+  keypress on a half wakes it back up afterwards (via `wakeup-source` on
   `kscan0` and a `zmk,soft-off-wakeup-sources` node, both in
   [`totem.dtsi`](config/boards/shields/totem/totem.dtsi)) - each half sleeps
   and wakes independently, there's no way for a sleeping battery-powered
   peripheral to be woken remotely. This is separate from and doesn't require
   `CONFIG_ZMK_SLEEP` (automatic idle-timeout sleep, which stays off) - it
-  only happens when you deliberately trigger the gesture.
+  only happens when you deliberately trigger the gesture. An atomic guard
+  also makes sure only one flash+sleep sequence can ever be in flight at a
+  time, in case switch bounce re-fires the listener while one's already
+  running.
   - **This used to be a ZMK combo** (evaluated centrally, with the trigger
     relayed back down to the peripheral over BLE via a custom
     `BEHAVIOR_LOCALITY_GLOBAL` behavior). That path turned out to be
@@ -105,11 +117,16 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   (see `app/src/split/bluetooth/peripheral.c`), unlike the central-side gap
   that `battery_led.c`'s connection heuristic has to work around. If a half
   goes 5 minutes without reaching the dongle - e.g. you powered the dongle off
-  for the night - it flashes the same warning and puts itself to sleep
-  automatically. `k_work_schedule` (not `reschedule`) is used deliberately so
-  repeated disconnect events from failed reconnect attempts don't keep
-  pushing the deadline back; only the first one starts the clock, and
-  reconnecting cancels it.
+  for the night - it flashes the same onboard LED and puts itself to sleep
+  automatically. Slower and brighter than the gesture's flash (nobody's
+  sitting there holding a key down waiting for this one, so the wakeup-source
+  hazard above doesn't apply, and it needs to be noticeable to someone who
+  wasn't watching) and doesn't wait on anything before calling
+  `zmk_pm_soft_off()`, since no keys are involved in this trigger at all.
+  `k_work_schedule` (not `reschedule`) is used deliberately so repeated
+  disconnect events from failed reconnect attempts don't keep pushing the
+  deadline back; only the first one starts the clock, and reconnecting
+  cancels it.
 
 ## How the battery data actually gets to the dongle
 

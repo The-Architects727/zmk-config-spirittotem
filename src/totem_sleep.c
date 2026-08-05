@@ -7,6 +7,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/atomic.h>
 
 #include <zmk/event_manager.h>
 #include <zmk/events/position_state_changed.h>
@@ -24,21 +25,49 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  */
 static const struct gpio_dt_spec onboard_led = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 
-#define SLEEP_WARN_FLASHES 3
-#define SLEEP_WARN_ON_MS 300
-#define SLEEP_WARN_OFF_MS 200
-
-static void flash_and_sleep(void) {
-    for (int i = 0; i < SLEEP_WARN_FLASHES; i++) {
+static void do_flash(int flashes, int on_ms, int off_ms) {
+    for (int i = 0; i < flashes; i++) {
         gpio_pin_set_dt(&onboard_led, 1);
-        k_msleep(SLEEP_WARN_ON_MS);
+        k_msleep(on_ms);
         gpio_pin_set_dt(&onboard_led, 0);
-        k_msleep(SLEEP_WARN_OFF_MS);
+        k_msleep(off_ms);
+    }
+}
+
+/*
+ * zmk_pm_soft_off() (app/src/pm.c) re-arms the kscan matrix as a wakeup
+ * source right before powering off. If the physical keys that triggered
+ * sleep are still being held at that exact moment, that's a level already
+ * active when the wake-detect gets armed - a known nRF52 GPIO SENSE/LATCH
+ * hazard that can leave the wake mechanism stuck until a true
+ * power-on-reset (matching "only the reset button, or draining the battery
+ * for a minute, brings it back"). Guards both sleep triggers against
+ * calling zmk_pm_soft_off() while any tracked key is still down.
+ */
+static atomic_t sleep_in_progress = ATOMIC_INIT(0);
+
+static bool any_gesture_key_down(void);
+
+static void wait_for_release_and_sleep(void) {
+    for (int waited_ms = 0; any_gesture_key_down() && waited_ms < 3000; waited_ms += 20) {
+        k_msleep(20);
     }
     zmk_pm_soft_off();
 }
 
-static void sleep_work_handler(struct k_work *work) { flash_and_sleep(); }
+static void sleep_work_handler(struct k_work *work) {
+    if (!atomic_cas(&sleep_in_progress, 0, 1)) {
+        return;
+    }
+    /* Quick and bright rather than the auto-sleep timing below: this is a
+     * deliberate gesture the user is actively watching, and a fast flash
+     * minimizes how long they're still holding the trigger keys down -
+     * both for OS key-repeat (nothing here suppresses the keys' normal
+     * output - see the gesture comment further down) and for the wakeup-
+     * source hazard above. */
+    do_flash(3, 80, 60);
+    wait_for_release_and_sleep();
+}
 
 static K_WORK_DEFINE(sleep_work, sleep_work_handler);
 
@@ -63,10 +92,12 @@ static K_WORK_DEFINE(sleep_work, sleep_work_handler);
  *
  * Trade-off: unlike a real combo, this doesn't suppress the keys' normal
  * output - Escape/Z or Slash/Minus still get sent to the host as usual when
- * you do this, same as any other keypress. It's a deliberate two-key hold
- * you wouldn't do while typing normally, so a stray Escape/z or /- landing
- * in whatever's focused right before the half sleeps is an acceptable
- * one-time side effect.
+ * you do this, same as any other keypress. It's a deliberate two-key press
+ * you wouldn't do while typing normally, so a brief Escape/z or /- landing
+ * in whatever's focused is an acceptable one-time side effect - and since
+ * sleep now waits for release (see wait_for_release_and_sleep above), it's
+ * a single press+release rather than a held-down key, so it shouldn't
+ * repeat.
  */
 #define SLEEP_GESTURE_POS_LEFT_1 20  /* Escape */
 #define SLEEP_GESTURE_POS_LEFT_2 21  /* Z */
@@ -74,6 +105,8 @@ static K_WORK_DEFINE(sleep_work, sleep_work_handler);
 #define SLEEP_GESTURE_POS_RIGHT_2 31 /* Minus */
 
 static bool pos_left_1, pos_left_2, pos_right_1, pos_right_2;
+
+static bool any_gesture_key_down(void) { return pos_left_1 || pos_left_2 || pos_right_1 || pos_right_2; }
 
 static int sleep_gesture_listener(const zmk_event_t *eh) {
     const struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
@@ -116,13 +149,20 @@ ZMK_SUBSCRIPTION(totem_sleep_gesture, zmk_position_state_changed);
  * event ZMK raises on connect/disconnect (app/src/split/bluetooth/peripheral.c).
  * k_work_schedule (not reschedule) is deliberate: repeated disconnect events
  * from failed reconnect attempts don't keep pushing the deadline back, only
- * the first one starts the clock, and reconnecting cancels it.
+ * the first one starts the clock, and reconnecting cancels it. Slower/
+ * brighter flash timing than the gesture above is fine here - nobody's
+ * holding a key down waiting for it, so the wakeup-source hazard doesn't
+ * apply, and this needs to be noticeable to someone who wasn't watching.
  */
 #define TOTEM_AUTO_SLEEP_TIMEOUT_MS (5 * 60 * 1000)
 
 static void auto_sleep_work_handler(struct k_work *work) {
+    if (!atomic_cas(&sleep_in_progress, 0, 1)) {
+        return;
+    }
     LOG_INF("Central unreachable for %d minutes, sleeping", TOTEM_AUTO_SLEEP_TIMEOUT_MS / 60000);
-    flash_and_sleep();
+    do_flash(3, 300, 200);
+    zmk_pm_soft_off();
 }
 
 static K_WORK_DELAYABLE_DEFINE(auto_sleep_work, auto_sleep_work_handler);
