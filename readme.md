@@ -27,14 +27,17 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   [`totem_dongle.overlay`](config/boards/shields/totem/totem_dongle.overlay)),
   driven by a small custom listener in
   [`src/battery_led.c`](src/battery_led.c). Each LED has three states: **off**
-  (that half hasn't reported in ~90s — asleep or disconnected), **dim** (a
+  (that half hasn't reported in ~30s — asleep or disconnected), **dim** (a
   low-duty-cycle software pulse — connected, battery fine), or **bright**
   (connected, battery low). ZMK doesn't expose a clean central-side "is
   peripheral N connected" event, so "connected" here is inferred from battery
-  report freshness (reports arrive every 30s; 3 missed reports = assume
-  asleep). That means up to ~90s of lag noticing a disconnect and ~30s
+  report freshness (reports arrive every 10s; 3 missed reports = assume
+  asleep). That means up to ~30s of lag noticing a disconnect and ~10s
   noticing a reconnect — fine for "is it on for the night", not meant for
-  real-time status.
+  real-time status. The interval is short specifically because left and right
+  run this report timer independently and unsynchronized, so their "assume
+  asleep" moments can visibly disagree by up to one full report interval; a
+  shorter interval bounds how far apart the two LEDs can land.
 - **On-demand battery check.** Hold the Fun layer, tap the far outer-left
   pinky key to blink out each half's charge in 10% steps (left LED, pause,
   right LED) — see [`src/battery_led.c`](src/battery_led.c) for the behavior

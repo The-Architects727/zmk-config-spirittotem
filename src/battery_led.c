@@ -41,14 +41,20 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  * is local to each peripheral, about its own link, not exposed centrally
  * with a source index. So "connected" here is inferred: a side counts as
  * connected as long as we've heard a battery report from it recently.
- * CONFIG_ZMK_BATTERY_REPORT_INTERVAL is 30s (see totem_left.conf /
+ * CONFIG_ZMK_BATTERY_REPORT_INTERVAL is 10s (see totem_left.conf /
  * totem_right.conf), so 3 missed reports is a safe margin against one
  * arriving a little late without mistaking a real disconnect/sleep for
- * still-connected. The resulting lag (up to ~90s to notice asleep, up to
- * ~30s to notice awake again) is fine for "is it on for the night", which is
- * what this is actually for - not real-time status.
+ * still-connected.
+ *
+ * Left and right each run this report timer independently and
+ * unsynchronized, so their "last report" timestamps drift apart - which
+ * means their two "assume asleep" moments can visibly disagree by as much as
+ * one full report interval. That gap scales directly with the interval
+ * itself (not with this multiplier), which is why the interval was dropped
+ * from the original 30s to 10s: it bounds how far apart the two LEDs can
+ * visibly land, at the cost of slightly more frequent battery reports.
  */
-#define TOTEM_DISCONNECT_TIMEOUT_MS (3 * 30000)
+#define TOTEM_DISCONNECT_TIMEOUT_MS (3 * 10000)
 
 /* Software PWM for the "dim" state: toggles the LED at a rate fast enough
  * to look like a steady dim glow rather than a blink, without needing real
