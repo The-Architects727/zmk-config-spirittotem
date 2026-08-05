@@ -25,6 +25,24 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  */
 static const struct gpio_dt_spec onboard_led = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 
+/*
+ * ZMK's own kscan matrix driver (app/module/drivers/kscan/kscan_gpio_matrix.c)
+ * does its debounce/re-scan polling via a k_work_delayable submitted with
+ * plain k_work_reschedule() - which, like plain k_work_submit()/
+ * k_work_schedule() below, targets the shared default system workqueue.
+ * flash_and_sleep's k_msleep() calls used to run on that same workqueue via
+ * K_WORK_DEFINE/K_WORK_DELAYABLE_DEFINE, blocking it for hundreds of
+ * milliseconds at a time - starving kscan's own "poll quickly while a key
+ * is still settling" loop at the worst possible moment (while the gesture
+ * keys were still being read) and very likely the real cause of both the
+ * spurious repeated characters and the failure to wake afterwards, neither
+ * of which had anything to do with how long the keys were actually held.
+ * A dedicated queue, with its own thread, means blocking here can never
+ * again compete with kscan (or anything else) for the system workqueue.
+ */
+static struct k_work_q sleep_work_q;
+K_THREAD_STACK_DEFINE(sleep_work_q_stack, 2048);
+
 static void do_flash(int flashes, int on_ms, int off_ms) {
     for (int i = 0; i < flashes; i++) {
         gpio_pin_set_dt(&onboard_led, 1);
@@ -41,41 +59,44 @@ static void do_flash(int flashes, int on_ms, int off_ms) {
  * active when the wake-detect gets armed - a known nRF52 GPIO SENSE/LATCH
  * hazard that can leave the wake mechanism stuck until a true
  * power-on-reset (matching "only the reset button, or draining the battery
- * for a minute, brings it back"). Guards both sleep triggers against
- * calling zmk_pm_soft_off() while any tracked key is still down.
+ * for a minute, brings it back").
+ *
+ * A first version tried to fix this by waiting (with a timeout) for release
+ * *after* detecting the press instead of before flashing at all. In testing
+ * that produced a burst of repeated characters starting only after the
+ * flash finished and lasting close to the full timeout, regardless of how
+ * briefly the keys were actually tapped - the giveaway that the timeout was
+ * being hit every time, not because of a long hold, but because the wait
+ * loop (like the flash before it) was itself running on the shared system
+ * workqueue and monopolizing it, so kscan's own debounce/re-scan work
+ * (queued on that same workqueue - see sleep_work_q above) couldn't run and
+ * report the actual release no matter how quickly it happened, until the
+ * timeout finally gave up waiting and this returned. Between the dedicated
+ * queue above (so this can never again block kscan) and triggering only
+ * after sleep_gesture_listener below has already observed the full
+ * press-then-release itself, there's nothing left to wait for here at all:
+ * by the time this handler runs, the keys are already confirmed up.
  */
 static atomic_t sleep_in_progress = ATOMIC_INIT(0);
-
-static bool any_gesture_key_down(void);
-
-static void wait_for_release_and_sleep(void) {
-    for (int waited_ms = 0; any_gesture_key_down() && waited_ms < 3000; waited_ms += 20) {
-        k_msleep(20);
-    }
-    zmk_pm_soft_off();
-}
 
 static void sleep_work_handler(struct k_work *work) {
     if (!atomic_cas(&sleep_in_progress, 0, 1)) {
         return;
     }
     /* Quick and bright rather than the auto-sleep timing below: this is a
-     * deliberate gesture the user is actively watching, and a fast flash
-     * minimizes how long they're still holding the trigger keys down -
-     * both for OS key-repeat (nothing here suppresses the keys' normal
-     * output - see the gesture comment further down) and for the wakeup-
-     * source hazard above. */
+     * deliberate gesture the user is actively watching, and there's no
+     * reason to draw it out now that it only starts after release. */
     do_flash(3, 80, 60);
-    wait_for_release_and_sleep();
+    zmk_pm_soft_off();
 }
 
 static K_WORK_DEFINE(sleep_work, sleep_work_handler);
 
 /*
- * Manual sleep gesture: hold Esc+Z (left) or Slash+Minus (right) - whichever
- * pair actually exists on this half's own kscan matrix; the other pair's
- * positions simply never fire here, so this same code works unmodified on
- * both builds.
+ * Manual sleep gesture: press Esc+Z (left) or Slash+Minus (right) together,
+ * then let go - whichever pair actually exists on this half's own kscan
+ * matrix; the other pair's positions simply never fire here, so this same
+ * code works unmodified on both builds.
  *
  * This used to be a ZMK combo (evaluated centrally, with the trigger relayed
  * back down to the peripheral over BLE via a custom GLOBAL-locality
@@ -90,14 +111,15 @@ static K_WORK_DEFINE(sleep_work, sleep_work_handler);
  * anything is sent to the central at all, so there's no relay, no GATT
  * callback, nothing that can drop a packet - each half decides for itself.
  *
- * Trade-off: unlike a real combo, this doesn't suppress the keys' normal
- * output - Escape/Z or Slash/Minus still get sent to the host as usual when
- * you do this, same as any other keypress. It's a deliberate two-key press
- * you wouldn't do while typing normally, so a brief Escape/z or /- landing
- * in whatever's focused is an acceptable one-time side effect - and since
- * sleep now waits for release (see wait_for_release_and_sleep above), it's
- * a single press+release rather than a held-down key, so it shouldn't
- * repeat.
+ * Triggers on release, not press: `armed` latches true the moment both
+ * positions of a pair are simultaneously down, and the actual sleep_work
+ * only gets submitted once both have gone back up. This means (a) by the
+ * time sleep_work_handler runs, the keys are already confirmed released -
+ * no race, no timeout, nothing left to wait for before calling
+ * zmk_pm_soft_off() - and (b) whatever the keys' normal Escape/Z or
+ * Slash/Minus output was during the brief press is over by the time
+ * anything else happens, instead of continuing to repeat for as long as a
+ * flash-then-sleep sequence takes to run.
  */
 #define SLEEP_GESTURE_POS_LEFT_1 20  /* Escape */
 #define SLEEP_GESTURE_POS_LEFT_2 21  /* Z */
@@ -105,8 +127,7 @@ static K_WORK_DEFINE(sleep_work, sleep_work_handler);
 #define SLEEP_GESTURE_POS_RIGHT_2 31 /* Minus */
 
 static bool pos_left_1, pos_left_2, pos_right_1, pos_right_2;
-
-static bool any_gesture_key_down(void) { return pos_left_1 || pos_left_2 || pos_right_1 || pos_right_2; }
+static bool left_armed, right_armed;
 
 static int sleep_gesture_listener(const zmk_event_t *eh) {
     const struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
@@ -132,8 +153,20 @@ static int sleep_gesture_listener(const zmk_event_t *eh) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
-    if ((pos_left_1 && pos_left_2) || (pos_right_1 && pos_right_2)) {
-        k_work_submit(&sleep_work);
+    if (pos_left_1 && pos_left_2) {
+        left_armed = true;
+    }
+    if (pos_right_1 && pos_right_2) {
+        right_armed = true;
+    }
+
+    if (left_armed && !pos_left_1 && !pos_left_2) {
+        left_armed = false;
+        k_work_submit_to_queue(&sleep_work_q, &sleep_work);
+    }
+    if (right_armed && !pos_right_1 && !pos_right_2) {
+        right_armed = false;
+        k_work_submit_to_queue(&sleep_work_q, &sleep_work);
     }
 
     return ZMK_EV_EVENT_BUBBLE;
@@ -177,7 +210,7 @@ static int auto_sleep_listener(const zmk_event_t *eh) {
     if (ev->connected) {
         k_work_cancel_delayable(&auto_sleep_work);
     } else {
-        k_work_schedule(&auto_sleep_work, K_MSEC(TOTEM_AUTO_SLEEP_TIMEOUT_MS));
+        k_work_schedule_for_queue(&sleep_work_q, &auto_sleep_work, K_MSEC(TOTEM_AUTO_SLEEP_TIMEOUT_MS));
     }
 
     return ZMK_EV_EVENT_BUBBLE;
@@ -193,6 +226,10 @@ static int totem_sleep_init(void) {
     }
 
     gpio_pin_configure_dt(&onboard_led, GPIO_OUTPUT_INACTIVE);
+
+    k_work_queue_init(&sleep_work_q);
+    k_work_queue_start(&sleep_work_q, sleep_work_q_stack, K_THREAD_STACK_SIZEOF(sleep_work_q_stack),
+                       K_LOWEST_APPLICATION_THREAD_PRIO, NULL);
 
     return 0;
 }

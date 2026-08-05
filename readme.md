@@ -49,28 +49,32 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   pinky key to blink out each half's charge in 10% steps (left LED, pause,
   right LED) — see [`src/battery_led.c`](src/battery_led.c) for the behavior
   driver and blink sequencer.
-- **Manual sleep gesture, with a warning flash.** Hold Esc + Z to sleep the
-  left half, or Slash + Minus to sleep the right half - each half decides for
-  itself and acts independently, so you can sleep just one side or both.
-  Implemented in [`src/totem_sleep.c`](src/totem_sleep.c) as a plain listener
-  on `zmk_position_state_changed` for those four positions (Escape/Z on the
-  left, Slash/Minus on the right - whichever pair actually exists on that
-  half's own kscan matrix; the other pair's positions simply never fire on
-  that build), which flashes the XIAO nRF52840's built-in green LED (`led1` -
-  separate hardware from the dongle's D0/D1 battery LEDs, already present on
-  the board, no wiring needed) 3 quick times as soon as both keys are down,
-  then **waits for you to actually release them** before calling
-  `zmk_pm_soft_off()`. That wait isn't cosmetic: `zmk_pm_soft_off()`
-  (`app/src/pm.c` in the ZMK source) re-arms the kscan matrix as a wakeup
-  source right before powering off, and if the trigger keys are still held
-  at that exact moment, that's a wake-detect line already active when the
-  wakeup gets armed - a known nRF52 GPIO SENSE/LATCH hazard that can leave
-  the wake mechanism stuck until a true power-on-reset. Waiting for release
-  first (capped at 3s so a stuck switch can't hang it forever) guarantees
-  the keys are idle when the wakeup source gets armed, and as a side effect
-  keeps the keys from being held long enough to trigger OS key-repeat. Any
-  keypress on a half wakes it back up afterwards (via `wakeup-source` on
-  `kscan0` and a `zmk,soft-off-wakeup-sources` node, both in
+- **Manual sleep gesture, with a warning flash.** Press Esc + Z together then
+  let go to sleep the left half, or Slash + Minus for the right half - each
+  half decides for itself and acts independently, so you can sleep just one
+  side or both. Implemented in [`src/totem_sleep.c`](src/totem_sleep.c) as a
+  plain listener on `zmk_position_state_changed` for those four positions
+  (Escape/Z on the left, Slash/Minus on the right - whichever pair actually
+  exists on that half's own kscan matrix; the other pair's positions simply
+  never fire on that build). It only acts on the full press-then-release
+  cycle, not on press: a pair latches "armed" the moment both its keys are
+  simultaneously down, and the flash+sleep only fires once both have gone
+  back up. That's not cosmetic - `zmk_pm_soft_off()` (`app/src/pm.c` in the
+  ZMK source) re-arms the kscan matrix as a wakeup source right before
+  powering off, and if the trigger keys are still held at that exact moment,
+  that's a wake-detect line already active when the wakeup gets armed - a
+  known nRF52 GPIO SENSE/LATCH hazard that can leave the wake mechanism
+  stuck until a true power-on-reset. Triggering only after release means the
+  keys are already confirmed up by the time any of this runs, so there's
+  nothing to wait for and no timeout needed - the first version of this fix
+  used a wait-with-timeout *after* the press instead, but the timeout itself
+  was just a delayed way to still call `zmk_pm_soft_off()` while the keys
+  were held, so it didn't actually fix anything. Once triggered, it flashes
+  the XIAO nRF52840's built-in green LED (`led1` - separate hardware from
+  the dongle's D0/D1 battery LEDs, already present on the board, no wiring
+  needed) 3 quick times, then sleeps. Any keypress on a half wakes it back up
+  afterwards (via `wakeup-source` on `kscan0` and a
+  `zmk,soft-off-wakeup-sources` node, both in
   [`totem.dtsi`](config/boards/shields/totem/totem.dtsi)) - each half sleeps
   and wakes independently, there's no way for a sleeping battery-powered
   peripheral to be woken remotely. This is separate from and doesn't require
@@ -79,6 +83,23 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   also makes sure only one flash+sleep sequence can ever be in flight at a
   time, in case switch bounce re-fires the listener while one's already
   running.
+  - **Runs on its own dedicated workqueue, not the default system one.**
+    ZMK's own kscan matrix driver
+    (`app/module/drivers/kscan/kscan_gpio_matrix.c`) does its debounce/
+    re-scan polling via a `k_work_delayable` on that same shared system
+    workqueue. The flash sequence's `k_msleep()` calls, if run there too
+    (as an earlier version did), block that single thread for hundreds of
+    milliseconds at a time - `k_msleep()` yields the CPU to *other threads*
+    during that time, but it doesn't let the *same* workqueue move on to
+    its next queued item, so kscan's own scan processing (for every key,
+    not just the gesture ones) is stuck behind it the whole time. In
+    testing this produced a burst of spurious repeated characters right
+    after the flash sequence released the queue, and blocked other typing
+    entirely while it was running - both symptoms of kscan being starved,
+    not of how long any key was actually held. `sleep_work_q` (a small
+    dedicated queue with its own thread, started in `totem_sleep_init`)
+    means this code can never again compete with kscan for the same
+    thread.
   - **This used to be a ZMK combo** (evaluated centrally, with the trigger
     relayed back down to the peripheral over BLE via a custom
     `BEHAVIOR_LOCALITY_GLOBAL` behavior). That path turned out to be
