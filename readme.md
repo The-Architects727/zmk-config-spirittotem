@@ -27,24 +27,34 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   [`totem_dongle.overlay`](config/boards/shields/totem/totem_dongle.overlay)),
   driven by a small custom listener in
   [`src/battery_led.c`](src/battery_led.c). Each LED has three states: **off**
-  (that half hasn't reported in ~60s — asleep or disconnected), **dim** (a
-  low-duty-cycle software pulse — connected, battery fine), or **bright**
-  (connected, battery low). ZMK doesn't expose a clean central-side "is
-  peripheral N connected" event, so "connected" here is inferred from battery
-  report freshness (reports arrive every 10s; 6 missed reports = assume
-  asleep). That means up to ~60s of lag noticing a disconnect and ~10s
-  noticing a reconnect — fine for "is it on for the night", not meant for
-  real-time status. The interval is short specifically because left and right
-  run this report timer independently and unsynchronized, so their "assume
-  asleep" moments can visibly disagree by up to one full report interval; a
-  shorter interval bounds how far apart the two LEDs can land. The 6-miss
-  tolerance (up from an original 3) exists because the dongle juggles two
-  simultaneous peripheral connections, and an occasional single report
-  landing late is normal BLE behavior on that kind of link, not a real
-  disconnect - 3 misses was tight enough that it periodically flickered the
-  LED off and back on for no reason. `CONFIG_ZMK_IDLE_TIMEOUT` is also raised
-  to effectively never (see `totem_left.conf`/`totem_right.conf`) so a lull
-  in typing doesn't pause battery reporting and trip this same heuristic.
+  (asleep or disconnected), **dim** (a low-duty-cycle software pulse —
+  connected, battery fine), or **bright** (connected, battery low).
+  ZMK doesn't expose a clean central-side "is peripheral N connected" event,
+  so this mostly infers "connected" from battery report freshness (reports
+  arrive every 10s; 6 missed reports = assume asleep, a ~60s-lag fallback -
+  fine for "is it on for the night", not meant for real-time status). But
+  there's a fast path too: ZMK's own central-side BLE disconnect handler
+  (`split_central_disconnected` in `app/src/split/bluetooth/central.c`)
+  already synthesizes a battery report of 0% the instant a peripheral's BLE
+  connection actually drops, for any reason - including this half going to
+  sleep (see the manual sleep gesture below). A 0% report is treated as an
+  immediate, authoritative disconnect signal rather than a real low-battery
+  reading (which would otherwise light the LED *bright* right as a half
+  goes to sleep - backwards from the OFF state it should show), so a
+  deliberate sleep or a real disconnect typically shows up much faster than
+  the ~60s staleness fallback, without needing any new messaging from the
+  peripherals at all. The interval is short specifically because left and
+  right run this report timer independently and unsynchronized, so their
+  "assume asleep" moments (when relying on the staleness fallback) can
+  visibly disagree by up to one full report interval; a shorter interval
+  bounds how far apart the two LEDs can land. The 6-miss tolerance (up from
+  an original 3) exists because the dongle juggles two simultaneous
+  peripheral connections, and an occasional single report landing late is
+  normal BLE behavior on that kind of link, not a real disconnect - 3 misses
+  was tight enough that it periodically flickered the LED off and back on
+  for no reason. `CONFIG_ZMK_IDLE_TIMEOUT` is also raised to effectively
+  never (see `totem_left.conf`/`totem_right.conf`) so a lull in typing
+  doesn't pause battery reporting and trip the staleness fallback.
 - **On-demand battery check.** Hold the Fun layer, tap the far outer-left
   pinky key to blink out each half's charge in 10% steps (left LED, pause,
   right LED) — see [`src/battery_led.c`](src/battery_led.c) for the behavior

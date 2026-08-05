@@ -270,18 +270,38 @@ static int battery_led_listener(const zmk_event_t *eh) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
+    /* ZMK's own central-side BLE disconnect handler (split_central_disconnected
+     * in app/src/split/bluetooth/central.c) synthesizes a battery report with
+     * level 0 the instant a peripheral's BLE connection actually drops - for
+     * any reason, including this half going to sleep - rather than a real
+     * "battery is empty" ADC reading. Treating that the same as a genuine low
+     * battery would light the LED bright ("almost dead") right as a half
+     * goes to sleep, the opposite of the OFF state it should show. So a 0%
+     * report is instead treated as an immediate, authoritative "this side
+     * just disconnected" - marking it not connected right away rather than
+     * waiting out TOTEM_DISCONNECT_TIMEOUT_MS's staleness heuristic below,
+     * which stays as a fallback for cases where this event doesn't arrive
+     * (e.g. losing power ungracefully rather than a clean BLE teardown). */
     const int64_t now = k_uptime_get();
 
     switch (ev->source) {
     case TOTEM_LEFT_SOURCE:
-        left_state.last_pct = ev->state_of_charge;
-        left_state.last_seen_uptime = now;
-        left_state.connected = true;
+        if (ev->state_of_charge == 0) {
+            left_state.connected = false;
+        } else {
+            left_state.last_pct = ev->state_of_charge;
+            left_state.last_seen_uptime = now;
+            left_state.connected = true;
+        }
         break;
     case TOTEM_RIGHT_SOURCE:
-        right_state.last_pct = ev->state_of_charge;
-        right_state.last_seen_uptime = now;
-        right_state.connected = true;
+        if (ev->state_of_charge == 0) {
+            right_state.connected = false;
+        } else {
+            right_state.last_pct = ev->state_of_charge;
+            right_state.last_seen_uptime = now;
+            right_state.connected = true;
+        }
         break;
     default:
         LOG_WRN("Battery update from unexpected peripheral source %d", ev->source);
