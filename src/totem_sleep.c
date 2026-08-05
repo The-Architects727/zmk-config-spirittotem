@@ -42,6 +42,21 @@ static void flash_and_sleep(void) {
 }
 
 /*
+ * A GLOBAL-locality press relayed from the combo arrives on the peripheral
+ * inside split_svc_run_behavior() (app/src/split/bluetooth/service.c) - a
+ * Bluetooth GATT write callback, i.e. the BLE host stack's own processing
+ * thread, not a normal application thread. Blocking that thread for the ~1.5s
+ * flash_and_sleep() takes (via k_msleep) is exactly what silently broke the
+ * flash for the combo while the auto-sleep trigger below - which calls the
+ * same function from a plain k_work_delayable on the system workqueue -
+ * worked fine. Deferring to this k_work makes both triggers run
+ * flash_and_sleep() from the same safe context.
+ */
+static void combo_sleep_work_handler(struct k_work *work) { flash_and_sleep(); }
+
+static K_WORK_DEFINE(combo_sleep_work, combo_sleep_work_handler);
+
+/*
  * Custom zero-param behavior used by the sleep combo in totem.keymap
  * instead of stock &soft_off directly, so the flash happens no matter which
  * trigger fires. Same GLOBAL locality as &soft_off itself, so it still
@@ -51,7 +66,7 @@ static void flash_and_sleep(void) {
  */
 static int totem_sleep_pressed(struct zmk_behavior_binding *binding,
                                struct zmk_behavior_binding_event event) {
-    flash_and_sleep();
+    k_work_submit(&combo_sleep_work);
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
