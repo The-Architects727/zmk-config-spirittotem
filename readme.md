@@ -27,64 +27,76 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   [`totem_dongle.overlay`](config/boards/shields/totem/totem_dongle.overlay)),
   driven by a small custom listener in
   [`src/battery_led.c`](src/battery_led.c). Each LED has three states: **off**
-  (that half hasn't reported in ~30s — asleep or disconnected), **dim** (a
+  (that half hasn't reported in ~60s — asleep or disconnected), **dim** (a
   low-duty-cycle software pulse — connected, battery fine), or **bright**
   (connected, battery low). ZMK doesn't expose a clean central-side "is
   peripheral N connected" event, so "connected" here is inferred from battery
-  report freshness (reports arrive every 10s; 3 missed reports = assume
-  asleep). That means up to ~30s of lag noticing a disconnect and ~10s
+  report freshness (reports arrive every 10s; 6 missed reports = assume
+  asleep). That means up to ~60s of lag noticing a disconnect and ~10s
   noticing a reconnect — fine for "is it on for the night", not meant for
   real-time status. The interval is short specifically because left and right
   run this report timer independently and unsynchronized, so their "assume
   asleep" moments can visibly disagree by up to one full report interval; a
-  shorter interval bounds how far apart the two LEDs can land.
+  shorter interval bounds how far apart the two LEDs can land. The 6-miss
+  tolerance (up from an original 3) exists because the dongle juggles two
+  simultaneous peripheral connections, and an occasional single report
+  landing late is normal BLE behavior on that kind of link, not a real
+  disconnect - 3 misses was tight enough that it periodically flickered the
+  LED off and back on for no reason. `CONFIG_ZMK_IDLE_TIMEOUT` is also raised
+  to effectively never (see `totem_left.conf`/`totem_right.conf`) so a lull
+  in typing doesn't pause battery reporting and trip this same heuristic.
 - **On-demand battery check.** Hold the Fun layer, tap the far outer-left
   pinky key to blink out each half's charge in 10% steps (left LED, pause,
   right LED) — see [`src/battery_led.c`](src/battery_led.c) for the behavior
   driver and blink sequencer.
-- **Manual sleep combo, with a warning flash.** Hold Esc + Z (left half) and
-  Slash + Minus (right half) together to sleep both halves — the combo
-  requires keys from both hands at once, so it can only ever mean "sleep the
-  whole keyboard", never just one side. Bound to a custom `&totem_sleep`
-  behavior (not stock `&soft_off` directly) in
-  [`src/totem_sleep.c`](src/totem_sleep.c), which flashes the XIAO
-  nRF52840's built-in green LED (`led1` - separate hardware from the
-  dongle's D0/D1 battery LEDs, already present on the board, no wiring
-  needed) 3 times before actually calling `zmk_pm_soft_off()`, so there's a
-  visible confirmation it's about to sleep rather than it just going dark.
-  Same `BEHAVIOR_LOCALITY_GLOBAL` as stock `&soft_off`, so it still relays to
-  both peripherals from the one combo. Deliberately uses no thumb keys for
-  the combo itself: every thumb key is a mod-tap or layer-tap, and a combo
-  member that's also a layer-tap changes what other positions mean
-  mid-combo (e.g. the Fun key activating the Fun layer, turning position 20
-  from Escape into `&battery_check`), which breaks combo detection entirely.
-  Any keypress on a half wakes it back up (via `wakeup-source` on `kscan0`
-  and a `zmk,soft-off-wakeup-sources` node, both in
-  [`totem.dtsi`](config/boards/shields/totem/totem.dtsi)) — each half sleeps
+- **Manual sleep gesture, with a warning flash.** Hold Esc + Z to sleep the
+  left half, or Slash + Minus to sleep the right half - each half decides for
+  itself and acts independently, so you can sleep just one side or both.
+  Implemented in [`src/totem_sleep.c`](src/totem_sleep.c) as a plain listener
+  on `zmk_position_state_changed` for those four positions (Escape/Z on the
+  left, Slash/Minus on the right - whichever pair actually exists on that
+  half's own kscan matrix; the other pair's positions simply never fire on
+  that build), which flashes the XIAO nRF52840's built-in green LED (`led1` -
+  separate hardware from the dongle's D0/D1 battery LEDs, already present on
+  the board, no wiring needed) 3 times before calling `zmk_pm_soft_off()`, so
+  there's a visible confirmation it's about to sleep rather than it just
+  going dark. Any keypress on a half wakes it back up (via `wakeup-source` on
+  `kscan0` and a `zmk,soft-off-wakeup-sources` node, both in
+  [`totem.dtsi`](config/boards/shields/totem/totem.dtsi)) - each half sleeps
   and wakes independently, there's no way for a sleeping battery-powered
   peripheral to be woken remotely. This is separate from and doesn't require
-  `CONFIG_ZMK_SLEEP` (automatic idle-timeout sleep, which stays off) — it
-  only happens when you deliberately trigger the combo.
-  - **Gotcha that bit the first version of this:** the devicetree node behind
-    `&totem_sleep` has to have a *short* node name (currently `tot_sleep`,
-    under 15 characters) — not the `totem_sleep:` label used for phandle
-    references, the actual node name after it. `BEHAVIOR_LOCALITY_GLOBAL`
-    behaviors get relayed central-to-peripheral over BLE by looking up the
-    target behavior's device name in a fixed `char[16]` buffer
-    (`zmk_split_transport_central_command.data.invoke_behavior.behavior_dev`,
-    see `app/include/zmk/split/transport/types.h` in the ZMK source, and the
-    truncation-detecting `LOG_ERR` right where it gets packed, in
-    `app/src/split/central.c`). A longer name gets silently truncated in
-    transit and matches nothing on the peripheral, so the combo still
-    resolves and its press/release get sent, but the peripheral can't find
-    the behavior and does nothing at all — no flash, no sleep, no error
-    visible without a serial log. This is exactly why stock `&soft_off`'s
-    own node is named the cryptic `z_so_off` rather than something
-    descriptive — ZMK's own authors hit the same limit. `&battery_check`
-    happens to dodge this because it's `BEHAVIOR_LOCALITY_CENTRAL`, which
-    never goes through the split relay at all — only `GLOBAL`/`EVENT_SOURCE`
-    behaviors that cross the peripheral boundary need to respect the 15-char
-    limit.
+  `CONFIG_ZMK_SLEEP` (automatic idle-timeout sleep, which stays off) - it
+  only happens when you deliberately trigger the gesture.
+  - **This used to be a ZMK combo** (evaluated centrally, with the trigger
+    relayed back down to the peripheral over BLE via a custom
+    `BEHAVIOR_LOCALITY_GLOBAL` behavior). That path turned out to be
+    unreliable in practice on this hardware: it took fixing two real,
+    confirmed bugs along the way -
+    1. the devicetree node backing the custom behavior had too long a name;
+       `GLOBAL`/`EVENT_SOURCE` behaviors get relayed central-to-peripheral
+       over BLE by looking up the target's device name in a fixed `char[16]`
+       buffer (`zmk_split_transport_central_command.data.invoke_behavior.behavior_dev`,
+       see `app/include/zmk/split/transport/types.h` in the ZMK source), and
+       a longer name gets silently truncated in transit and matches nothing
+       on the peripheral - this is why stock `&soft_off`'s own node is named
+       the cryptic `z_so_off` rather than something descriptive;
+    2. the peripheral-side handler for a relayed invocation
+       (`split_svc_run_behavior` in `app/src/split/bluetooth/service.c`) is a
+       Bluetooth GATT write callback - the BLE host stack's own thread, not
+       a normal application thread - and the behavior was blocking that
+       thread for the full ~1.5s of the flash sequence via `k_msleep()`.
+
+    and even after both fixes it *still* didn't fire reliably, most likely
+    a dropped or delayed packet somewhere in the relay itself with no way to
+    confirm further without a serial debug probe. Listening locally
+    sidesteps the whole relay: no BLE round-trip, no GATT callback, nothing
+    in the path that can silently drop a command.
+  - **Trade-off:** unlike a real combo, this doesn't suppress the keys'
+    normal output - Escape/Z or Slash/Minus still get sent to the host as
+    usual when you do this, same as any other keypress. It's a deliberate
+    two-key hold you wouldn't do while typing normally, so a stray Escape/z
+    or /- landing in whatever's focused right before that half sleeps is an
+    accepted one-time side effect of the simpler, more reliable approach.
 - **Auto-sleep when the dongle disappears.** The other half of
   [`src/totem_sleep.c`](src/totem_sleep.c) (gated by `CONFIG_TOTEM_SLEEP_WARN`,
   which depends on `!ZMK_SPLIT_ROLE_CENTRAL` - left/right only) subscribes to
@@ -105,7 +117,7 @@ ZMK's split transport already carries a battery-percentage event
 (`ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_BATTERY_EVENT`) over the same
 peripheral→central link used for key events — it's not literally packed into
 each key-position packet, but it rides the same transport as its own event
-type, updated every `CONFIG_ZMK_BATTERY_REPORT_INTERVAL` seconds (30s here,
+type, updated every `CONFIG_ZMK_BATTERY_REPORT_INTERVAL` seconds (10s here,
 see `totem_left.conf`/`totem_right.conf`). That's the standard, tested ZMK
 mechanism; reusing it (rather than hand-rolling a custom protocol that embeds
 battery bits inside every key packet) means no changes to ZMK core were

@@ -4,15 +4,12 @@
  * SPDX-License-Identifier: MIT
  */
 
-#define DT_DRV_COMPAT zmk_behavior_totem_sleep
-
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 
-#include <drivers/behavior.h>
-#include <zmk/behavior.h>
 #include <zmk/event_manager.h>
+#include <zmk/events/position_state_changed.h>
 #include <zmk/events/split_peripheral_status_changed.h>
 #include <zmk/pm.h>
 
@@ -41,56 +38,76 @@ static void flash_and_sleep(void) {
     zmk_pm_soft_off();
 }
 
-/*
- * A GLOBAL-locality press relayed from the combo arrives on the peripheral
- * inside split_svc_run_behavior() (app/src/split/bluetooth/service.c) - a
- * Bluetooth GATT write callback, i.e. the BLE host stack's own processing
- * thread, not a normal application thread. Blocking that thread for the ~1.5s
- * flash_and_sleep() takes (via k_msleep) is exactly what silently broke the
- * flash for the combo while the auto-sleep trigger below - which calls the
- * same function from a plain k_work_delayable on the system workqueue -
- * worked fine. Deferring to this k_work makes both triggers run
- * flash_and_sleep() from the same safe context.
- */
-static void combo_sleep_work_handler(struct k_work *work) { flash_and_sleep(); }
+static void sleep_work_handler(struct k_work *work) { flash_and_sleep(); }
 
-static K_WORK_DEFINE(combo_sleep_work, combo_sleep_work_handler);
+static K_WORK_DEFINE(sleep_work, sleep_work_handler);
 
 /*
- * Custom zero-param behavior used by the sleep combo in totem.keymap
- * instead of stock &soft_off directly, so the flash happens no matter which
- * trigger fires. Same GLOBAL locality as &soft_off itself, so it still
- * relays to every connected peripheral the way the combo needs (the combo
- * requires keys from both halves at once, so there's no scenario where only
- * one half should sleep from it anyway).
+ * Manual sleep gesture: hold Esc+Z (left) or Slash+Minus (right) - whichever
+ * pair actually exists on this half's own kscan matrix; the other pair's
+ * positions simply never fire here, so this same code works unmodified on
+ * both builds.
+ *
+ * This used to be a ZMK combo (evaluated centrally, with the trigger relayed
+ * back down to the peripheral over BLE via a custom GLOBAL-locality
+ * behavior). That turned out to be unreliable in practice: it took fixing
+ * two real bugs (a truncated split-transport behavior name, then a
+ * blocking call inside the Bluetooth GATT write callback that receives the
+ * relayed command) and it *still* didn't fire reliably, most likely a
+ * dropped/delayed BLE packet somewhere in the central-to-peripheral relay
+ * itself with no way to know for sure without a debug probe. Listening
+ * locally sidesteps all of that: physical_layouts.c already raises
+ * zmk_position_state_changed on this device for its own keys before
+ * anything is sent to the central at all, so there's no relay, no GATT
+ * callback, nothing that can drop a packet - each half decides for itself.
+ *
+ * Trade-off: unlike a real combo, this doesn't suppress the keys' normal
+ * output - Escape/Z or Slash/Minus still get sent to the host as usual when
+ * you do this, same as any other keypress. It's a deliberate two-key hold
+ * you wouldn't do while typing normally, so a stray Escape/z or /- landing
+ * in whatever's focused right before the half sleeps is an acceptable
+ * one-time side effect.
  */
-static int totem_sleep_pressed(struct zmk_behavior_binding *binding,
-                               struct zmk_behavior_binding_event event) {
-    k_work_submit(&combo_sleep_work);
-    return ZMK_BEHAVIOR_OPAQUE;
+#define SLEEP_GESTURE_POS_LEFT_1 20  /* Escape */
+#define SLEEP_GESTURE_POS_LEFT_2 21  /* Z */
+#define SLEEP_GESTURE_POS_RIGHT_1 30 /* Slash */
+#define SLEEP_GESTURE_POS_RIGHT_2 31 /* Minus */
+
+static bool pos_left_1, pos_left_2, pos_right_1, pos_right_2;
+
+static int sleep_gesture_listener(const zmk_event_t *eh) {
+    const struct zmk_position_state_changed *ev = as_zmk_position_state_changed(eh);
+
+    if (ev == NULL) {
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    switch (ev->position) {
+    case SLEEP_GESTURE_POS_LEFT_1:
+        pos_left_1 = ev->state;
+        break;
+    case SLEEP_GESTURE_POS_LEFT_2:
+        pos_left_2 = ev->state;
+        break;
+    case SLEEP_GESTURE_POS_RIGHT_1:
+        pos_right_1 = ev->state;
+        break;
+    case SLEEP_GESTURE_POS_RIGHT_2:
+        pos_right_2 = ev->state;
+        break;
+    default:
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    if ((pos_left_1 && pos_left_2) || (pos_right_1 && pos_right_2)) {
+        k_work_submit(&sleep_work);
+    }
+
+    return ZMK_EV_EVENT_BUBBLE;
 }
 
-static int totem_sleep_released(struct zmk_behavior_binding *binding,
-                                struct zmk_behavior_binding_event event) {
-    return ZMK_BEHAVIOR_OPAQUE;
-}
-
-static const struct behavior_driver_api totem_sleep_driver_api = {
-    .binding_pressed = totem_sleep_pressed,
-    .binding_released = totem_sleep_released,
-    .locality = BEHAVIOR_LOCALITY_GLOBAL,
-#if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
-    .get_parameter_metadata = zmk_behavior_get_empty_param_metadata,
-#endif // IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
-};
-
-#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
-#define TOTEM_SLEEP_INST(n)                                                                        \
-    BEHAVIOR_DT_INST_DEFINE(n, NULL, NULL, NULL, NULL, POST_KERNEL,                                \
-                            CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &totem_sleep_driver_api);
-
-DT_INST_FOREACH_STATUS_OKAY(TOTEM_SLEEP_INST)
-#endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */
+ZMK_LISTENER(totem_sleep_gesture, sleep_gesture_listener);
+ZMK_SUBSCRIPTION(totem_sleep_gesture, zmk_position_state_changed);
 
 /*
  * Auto-sleep when this half can't reach its central (dongle) for 5 minutes -

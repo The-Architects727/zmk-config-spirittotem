@@ -53,8 +53,19 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  * itself (not with this multiplier), which is why the interval was dropped
  * from the original 30s to 10s: it bounds how far apart the two LEDs can
  * visibly land, at the cost of slightly more frequent battery reports.
+ *
+ * The multiplier (misses tolerated, not the interval) was raised from 3 to
+ * 6 after real-world testing showed occasional single missed/delayed
+ * reports on ordinary in-use connections - the dongle juggles two
+ * simultaneous peripheral links, and a report landing a bit late is normal
+ * BLE behavior, not a real disconnect. 3 misses treated that as "asleep"
+ * and the LED would flicker off and back on with nothing actually having
+ * happened. Doubling the tolerance doesn't affect the left/right skew bound
+ * above (that's set by the interval, not this multiplier) - it only makes
+ * the "declared asleep" moment slower to trip on a real disconnect, which
+ * doesn't matter at human timescales.
  */
-#define TOTEM_DISCONNECT_TIMEOUT_MS (3 * 10000)
+#define TOTEM_DISCONNECT_TIMEOUT_MS (6 * 10000)
 
 /* Software PWM for the "dim" state: toggles the LED at a rate fast enough
  * to look like a steady dim glow rather than a blink, without needing real
