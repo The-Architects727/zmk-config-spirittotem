@@ -1,0 +1,5 @@
+description: Flashes the onboard LED a few times, then puts this half to sleep via soft-off
+
+compatible: "zmk,behavior-totem-sleep"
+
+include: zero_param.yaml

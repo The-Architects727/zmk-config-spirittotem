@@ -6,3 +6,9 @@ config TOTEM_BATTERY_LED
     default y
     depends on ZMK_SPLIT_ROLE_CENTRAL
     depends on ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING
+
+config TOTEM_SLEEP_WARN
+    bool "Flash the onboard LED before sleeping, and auto-sleep when the central is unreachable"
+    default y
+    depends on ZMK_SPLIT && !ZMK_SPLIT_ROLE_CENTRAL
+    depends on ZMK_PM_SOFT_OFF

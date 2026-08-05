@@ -37,15 +37,16 @@
         compatible = "zmk,combos";
 
         /* Esc + Z (left half) + Slash + Minus (right half), held together.
-         * Puts that half to sleep (see CONFIG_ZMK_PM_SOFT_OFF in
-         * totem_left.conf/totem_right.conf); press any key on a half to
-         * wake it back up. No thumb keys involved - they're all mod-taps or
-         * layer-taps, and a combo member that's also a layer-tap changes
-         * what other positions mean mid-combo, which breaks detection. */
+         * Flashes the onboard LED 3 times then sleeps both halves (see
+         * src/totem_sleep.c and CONFIG_TOTEM_SLEEP_WARN); press any key on
+         * a half to wake it back up. No thumb keys involved - they're all
+         * mod-taps or layer-taps, and a combo member that's also a
+         * layer-tap changes what other positions mean mid-combo, which
+         * breaks detection. */
         combo_sleep {
             timeout-ms = <100>;
             key-positions = <20 21 30 31>;
-            bindings = <&soft_off>;
+            bindings = <&totem_sleep>;
         };
     };
 

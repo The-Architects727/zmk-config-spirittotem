@@ -42,21 +42,42 @@ distinguished by filename (`totem_left.*`, `totem_right.*`, `totem_dongle.*`).
   pinky key to blink out each half's charge in 10% steps (left LED, pause,
   right LED) — see [`src/battery_led.c`](src/battery_led.c) for the behavior
   driver and blink sequencer.
-- **Manual sleep combo.** Hold Esc + Z (left half) and Slash + Minus (right
-  half) together to put that half to sleep via ZMK's built-in `&soft_off` —
-  see the `combo_sleep` combo in
-  [`config/totem.keymap`](config/totem.keymap). Deliberately uses no thumb
-  keys: every thumb key is a mod-tap or layer-tap, and a combo member that's
-  also a layer-tap changes what other positions mean mid-combo (e.g. the Fun
-  key activating the Fun layer, turning position 20 from Escape into
-  `&battery_check`), which breaks combo detection entirely. Any keypress on
-  a half wakes it back up (via `wakeup-source` on `kscan0` and a
-  `zmk,soft-off-wakeup-sources` node, both in
+- **Manual sleep combo, with a warning flash.** Hold Esc + Z (left half) and
+  Slash + Minus (right half) together to sleep both halves — the combo
+  requires keys from both hands at once, so it can only ever mean "sleep the
+  whole keyboard", never just one side. Bound to a custom `&totem_sleep`
+  behavior (not stock `&soft_off` directly) in
+  [`src/totem_sleep.c`](src/totem_sleep.c), which flashes the XIAO
+  nRF52840's built-in green LED (`led1` - separate hardware from the
+  dongle's D0/D1 battery LEDs, already present on the board, no wiring
+  needed) 3 times before actually calling `zmk_pm_soft_off()`, so there's a
+  visible confirmation it's about to sleep rather than it just going dark.
+  Same `BEHAVIOR_LOCALITY_GLOBAL` as stock `&soft_off`, so it still relays to
+  both peripherals from the one combo. Deliberately uses no thumb keys for
+  the combo itself: every thumb key is a mod-tap or layer-tap, and a combo
+  member that's also a layer-tap changes what other positions mean
+  mid-combo (e.g. the Fun key activating the Fun layer, turning position 20
+  from Escape into `&battery_check`), which breaks combo detection entirely.
+  Any keypress on a half wakes it back up (via `wakeup-source` on `kscan0`
+  and a `zmk,soft-off-wakeup-sources` node, both in
   [`totem.dtsi`](config/boards/shields/totem/totem.dtsi)) — each half sleeps
   and wakes independently, there's no way for a sleeping battery-powered
   peripheral to be woken remotely. This is separate from and doesn't require
   `CONFIG_ZMK_SLEEP` (automatic idle-timeout sleep, which stays off) — it
   only happens when you deliberately trigger the combo.
+- **Auto-sleep when the dongle disappears.** The other half of
+  [`src/totem_sleep.c`](src/totem_sleep.c) (gated by `CONFIG_TOTEM_SLEEP_WARN`,
+  which depends on `!ZMK_SPLIT_ROLE_CENTRAL` - left/right only) subscribes to
+  `zmk_split_peripheral_status_changed` — a real, per-peripheral "am I
+  connected to my central" event that ZMK already raises on connect/disconnect
+  (see `app/src/split/bluetooth/peripheral.c`), unlike the central-side gap
+  that `battery_led.c`'s connection heuristic has to work around. If a half
+  goes 5 minutes without reaching the dongle - e.g. you powered the dongle off
+  for the night - it flashes the same warning and puts itself to sleep
+  automatically. `k_work_schedule` (not `reschedule`) is used deliberately so
+  repeated disconnect events from failed reconnect attempts don't keep
+  pushing the deadline back; only the first one starts the clock, and
+  reconnecting cancels it.
 
 ## How the battery data actually gets to the dongle
 

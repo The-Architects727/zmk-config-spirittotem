@@ -100,6 +100,17 @@
     };
 
     /*
+     * Declared here (shared by all three shields) purely so the
+     * &totem_sleep label in the shared keymap resolves on every build - same
+     * reasoning as &battery_check above. Only actually does anything on
+     * left/right: see CONFIG_TOTEM_SLEEP_WARN and src/totem_sleep.c.
+     */
+    totem_sleep: behavior_totem_sleep {
+        compatible = "zmk,behavior-totem-sleep";
+        #binding-cells = <0>;
+    };
+
+    /*
      * Declared here (shared by all three shields) purely so the &battery_check
      * label in the shared keymap resolves on every build. It only actually
      * does anything on the dongle: that's the only build where
